@@ -41,6 +41,25 @@ POST/PUT/PATCH/DELETE work: method, body and most request headers are forwarded.
 - Cannot send cookies or credentials to the target. Use for public data only.
 - Some targets block Cloudflare IPs or require specific headers; failures there look like 403/5xx from upstream.
 
+## Error reporting in pages that use the proxy
+
+Any page or tool built on this proxy MUST show a copyable diagnostics panel when a load fails, so the user can paste it back for diagnosis instead of describing the problem. On any failure (network error, non-2xx status, JSON parse error, or valid JSON missing the expected data) replace the output area with:
+
+- an `<h2>` ("Couldn't load ...") and the short error message
+- a read-only `<textarea>` holding a JSON report
+- a "Copy diagnostics" button (use `navigator.clipboard.writeText`, fall back to selecting the textarea and `document.execCommand("copy")`) and a "Try again" button
+
+The JSON report must include:
+
+- `error` (name and message) and `failedAt` (the stage: fetch, parse JSON, read data, render)
+- `target` (the decoded upstream URL) and `requestUrl` (the full proxy URL)
+- `status` and all `responseHeaders` (`Object.fromEntries(res.headers.entries())`)
+- `bodyPreview`: the first ~600 characters of the response text, captured before parsing, plus `jsonKeys` when the JSON parsed but lacked the expected data
+- `page`: `location.origin` and `location.href` (reveals `file://` / `Origin: null`)
+- `time`, `userAgent`, and a `hint` for timeouts (`AbortError`) or `TypeError` (network/CORS)
+
+Use an `AbortController` timeout (~20s) on the fetch. Read the body with `res.text()` first, then `JSON.parse`, so the preview is available even when parsing fails.
+
 ## Diagnosing failures
 
 Ask the user for: the full request URL, HTTP status, response headers, first ~600 characters of the body, the page origin, and the browser console error.
