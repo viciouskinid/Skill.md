@@ -1,11 +1,9 @@
 ---
-description: Design and build polished, professional desktop-style web
-applications using a modular, workspace-first interface inspired by
-modern creative and engineering software. Use for new applications, UI
-redesigns, dashboards, editors, management tools, data viewers, and
-other interactive applications regardless of domain.
 name: professional-desktop-application-ui
-Professional Desktop Application UI
+description: Design and build polished, professional desktop-style web applications with a left mode rail that is icon-only until hovered (then slides its labels out and pushes the side panel across), a contextual panel, a workspace and optional inspector. Use for new applications, UI redesigns, adding navigation to an existing app, dashboards, editors, chat or agent tools, management tools and data viewers, regardless of domain.
+---
+
+# Professional Desktop Application UI
 Purpose
 Create cohesive, high-quality application interfaces using a reusable
 desktop-application architecture. The design reference is the overall
@@ -15,6 +13,18 @@ features unless the user's application actually needs them.
 The goal is to make applications feel like carefully designed
 professional software: compact, efficient, contextual, visually
 consistent, and focused on the user's primary work.
+
+**Non-negotiable signature behaviour: the hover-expanding rail.** The
+left rail is icon-only (about 62 px). Hovering it (or keyboard focus, or
+pinning it) widens it to about 180 px, the labels slide/fade out of the
+rail, and the contextual side panel is pushed to the right rather than
+covered. Do not substitute always-visible labels, labels stacked under
+the icons, a fixed-width sidebar, or an overlay that floats above the
+panel. Read section 2B and use its reference CSS before building any
+navigation. This applies to existing apps being redesigned as well as
+new ones, and to chat, agent and admin tools as much as editors. Open
+the reference page in a browser, or copy the CSS in 2B, instead of
+working from a summary of this skill.
 1. Start with the application's purpose
 Before designing the interface:
 Identify the application's primary user task and central working
@@ -77,6 +87,45 @@ Data); do not add a separate global "edit mode" toggle just to reveal
 tools. - Global search belongs in the top bar only; do not duplicate it
 in the rail or panels. - The right inspector is hidden until something
 is selected.
+Reference implementation (pure CSS, no JavaScript needed except the pin):
+
+``` css
+:root { --rail-collapsed: 62px; --rail-expanded: 180px; }
+.rail {                      /* a flex/grid SIBLING of the panel, never position:absolute */
+  width: var(--rail-collapsed); flex: none; overflow: hidden;
+  transition: width .22s cubic-bezier(.2,.8,.3,1);
+}
+.rail:hover,
+.rail:has(:focus-visible),    /* NOT :focus-within: a clicked button keeps focus and would hold the rail open */
+.rail.pinned { width: var(--rail-expanded); }
+
+.rail-btn { display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 0 8px 11px; white-space: nowrap; overflow: hidden; }
+.rail-btn .icon  { flex: none; width: 24px; text-align: center; }  /* icon stays put while the rail grows */
+.rail-btn .label { opacity: 0; max-width: 0; overflow: hidden;
+  transition: opacity .15s ease, max-width .25s ease; }
+.rail:hover .label, .rail:has(:focus-visible) .label, .rail.pinned .label
+  { opacity: 1; max-width: 120px; }
+```
+
+Notes: - The label sits to the right of its icon in a row. - Badges
+(unread counts, warnings) that must be seen while collapsed are
+positioned on the icon corner; low-priority badges appear only when
+expanded. - Pin: a button at the bottom of the rail toggles `.pinned`,
+sets `aria-pressed`, and persists in `localStorage` inside try/catch. -
+Phones: there is no hover, so the rail lives in a slide-in drawer and is
+shown permanently expanded (`width: var(--rail-expanded); transition:
+none`) with labels visible. Give the closed drawer `visibility:hidden`
+and `overflow:hidden` so its contents cannot overlap or trap focus. -
+Use `title` and `aria-label` on every rail button because labels are
+hidden when collapsed.
+
+Verify the behaviour with a browser test, not by eye: at rest the rail
+is 62 px wide, the panel's left edge is 62 px and labels have zero
+width; while hovering the rail is 180 px, the panel's left edge is 180
+px (pushed) and labels are visible; after the pointer leaves it returns
+to 62 px; with the pin on it stays 180 px after reload.
+
 Guidelines: - Use recognisable, consistent icons. - Show a clear
 active-mode indicator. - Support a compact icon-only state and an
 expanded state with labels. - Expansion may occur on hover, pinning, or
@@ -90,6 +139,13 @@ Typical structure: - Panel title and concise description. - Clearly
 labelled sections. - Tool buttons, action lists, cards, filters, and
 grouped controls. - Optional search or filtering for large tool
 collections. - Scrollable content when needed.
+For list-based apps (chat, agents, tickets, files) the contextual panel
+is the list of items for the active mode, with a primary "New ..."
+button above it. Selecting an item shows it in the workspace, with the
+most useful content (for example the latest report or message) first.
+Modes with no list (for example Usage or Settings) collapse the panel to
+zero width.
+
 Guidelines: - Show only tools relevant to the active mode. - Group tools
 by task, not arbitrary implementation categories. - Use compact rows
 with an icon, label, and optional short description. - Distinguish the
@@ -339,6 +395,10 @@ and layout work correctly.
 Before considering the interface complete, verify:
 [ ] The primary task is immediately apparent.
 [ ] The workspace has sufficient space and visual priority.
+[ ] The rail is icon-only at rest, widens on hover/focus/pin, slides its
+labels out, and pushes the side panel (verified by a browser test).
+[ ] The rail has a persisted pin, and on phones it is a drawer that is
+shown expanded.
 [ ] Navigation is distinct from contextual tools.
 [ ] Contextual tools update when the active mode changes.
 [ ] Inspector content reflects the current selection or context.
