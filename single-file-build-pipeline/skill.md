@@ -1,6 +1,6 @@
 ---
 name: single-file-build-pipeline
-description: Use whenever someone asks for a single-file HTML app, game or tool (especially one with embedded images, sprites, fonts or other base64 data), whenever an existing single HTML file has grown large or contains base64 assets, or when they want to "build and open" with one click. The deliverable stays ONE self-contained HTML file, but it is produced by a build script from a source project (src, assets, tests, AGENTS.md, skills) with a one-click run_build.bat. Never hand-edit the built file.
+description: Use whenever someone asks for a single-file HTML app, game or tool (especially one with embedded images, sprites, fonts or other base64 data), whenever an existing single HTML file has grown large or contains base64 assets, when an app is already split into a readable source file plus optional asset or plug-in files, when writing or updating an AGENTS.md for such a project, or when they want to "build and open" with one click. The deliverable stays ONE self-contained HTML file, but it is produced by a build script from a source project, never edited by hand. Two layouts: A (src/ template with placeholders and a one-click run_build.bat) and B (a readable index.html edited directly, with heavy data in optional runtime-loaded files and a script that embeds them).
 ---
 
 # Source project + build script that produces the single file
@@ -10,6 +10,16 @@ description: Use whenever someone asks for a single-file HTML app, game or tool 
 - The **source of truth** is a small project. The single file is generated from it and is never edited by hand.
 - Why: a single file with embedded base64 images is megabytes of noise. An AI that opens it wastes its context and edits blindly. The source files are small, readable and testable.
 - If the user says "make me a single HTML file", do not hand-write one big file. Build the project below and give them the built single file. Say so in one sentence.
+
+### Choosing a layout
+| | **Layout A: template build** (sections 2-9) | **Layout B: live source + optional assets** (section 10) |
+|---|---|---|
+| Best for | New builds; anything that wants tests and a one-click `.bat` | An existing working app that is too big to split safely, or that an AI must keep editing as one file |
+| Source of truth | `src/` template + `assets/` files, inlined at build time | `index.html` itself (readable, no big base64) + optional files it loads at run time |
+| Run from source | No, you must build first | Yes, open `index.html` and it works (optional pieces simply load, or are skipped if missing) |
+| Single file made by | `build.py` into `dist/` | `tools/build-single.py` into `<app>-single.html` |
+
+If the project already looks like B, keep it as B. Do not restructure it into A unless the owner asks. B can be migrated to A later (section 8).
 
 ## 2. How the user should ask (copy and paste)
 Short form:
@@ -60,8 +70,26 @@ Split `app.js` into several files only when it passes about 150 KB. A single wel
 ## 6. Tests
 `tests/smoke.js` loads the built HTML in Node with a stub DOM, a proxy canvas context and fake input devices, drives the app through its main flows and asserts the key rules, printing `ALL PASSED` or the failures. Keep it fast and dependency-free. Add a test with every new behaviour.
 
+**When there is no test harness yet** (typical for Layout B), still verify before handing over:
+1. Extract every inline `<script>` from the built or source HTML and run `node --check` on each.
+2. Put logic that has no DOM or map library in it between marker comments (`/* NAME-PURE:START */ ... /* NAME-PURE:END */`) and unit-test that slice in Node by extracting it from the real file, not a copy.
+3. For code that needs a canvas, `fetch` or `createImageBitmap`, run the real extracted code in headless Chromium (Playwright). If the real library (Leaflet etc.) is not available offline, stand in for just the base class.
+4. Serve test data from a real local HTTP server. Do not simulate CORS with Playwright `route.fulfill`: it adds permissive CORS headers itself, so a "no CORS" case silently passes as CORS-enabled. Also `await route.fulfill(...)`; an un-awaited handler leaves the request hanging. Launch Chromium with `--no-sandbox` in containers.
+5. Say plainly what could not be tested (for example live third-party services).
+
 ## 7. AGENTS.md and skills
-- `AGENTS.md` (about 10 lines): read order, build and test commands, "edit `src/` only, never `dist/`", how to publish, and the closing line to use after changes ("Build stamp set to ...").
+`AGENTS.md` is the first file any AI (or new person) reads. It exists so nobody has to open the big or heavy files to learn how the project works. Keep it short (about 40 to 70 lines), accurate and current: updating it is part of every change that moves something.
+
+**Sections, in this order** (Andrew's Earth's `AGENTS.md` is the worked example):
+1. **Read order**: this file, then the header comment of the main source file, then any plug-in `README-AI.md`, then the skills.
+2. **Project layout (as it is today)**: one line per file or folder, and mark what is **generated** ("never hand-edit") and what is **heavy data** ("never read or edit"). Say what the build command is.
+3. **Rules after ANY code change**: the build stamp (where, format), what must keep working (hooks), the rebuild command, and the closing line to use ("new build stamp, changelog lines, STATUS block").
+4. **Where things are**: the search words for each feature (a banner comment, a function name, a `*-PURE:START` marker) with one sentence on what it does and where its state lives. This is what saves an AI from reading 10,000 lines.
+5. **Checking your work**: the commands, and the marked slices that can be tested alone.
+6. **Skills**: a table of skill name, when to use it, and any project-specific difference ("this project uses Layout B; where they differ this file wins").
+7. **Handover naming**: file and chat names, so versions never collide.
+
+Never put a secret in `AGENTS.md`, a skill, or the source. If a service needs a key, say so and point at the private config (section 10).
 - `skills/<codebase>/SKILL.md`: layout, workflow, a map of the main code sections and global state, asset formats (for example sprite sheet frame sizes), conventions and gotchas, feature status (built and not built).
 - Domain skills (for example input handling, difficulty rules) as separate SKILL.md files with frontmatter `name` and `description`. Update a skill whenever you change the behaviour it describes.
 
@@ -73,6 +101,39 @@ Split `app.js` into several files only when it passes about 150 KB. A single wel
 ## 9. Publishing and handoff
 Publish or share `dist/<name>.html` only. Give the user the project zip (source) and the built file. Tell them to double-click `run_build.bat` after editing anything in `src/`.
 
+## 10. Layout B: live source + optional runtime-loaded assets
+Use when `index.html` is already the working source and heavy data must stay out of the AI's way.
+```
+project/
+  AGENTS.md              start-here notes (read order, "never read heavy files", build command, rules after a change)
+  index.html             the app. Edited directly. No large base64 inside. Header comment holds the maintenance rules
+  assets/<name>.js       heavy base64 as data (`window.NAME = {...}`), loaded by an optional loader
+  <plugin>/              optional feature folder with its own README-AI.md, joined to index.html by marked hooks
+  tools/build-single.py  embeds the assets and plug-ins to make ONE self-contained file
+  <app>-single.html      generated, never edited by hand
+  skills/                SKILL.md per topic
+```
+**Rules**
+- **Optional loaders.** Heavy files load with a `<script src>` created at run time, with a timeout (about 8 s) so the app never waits forever, and `onerror` that logs one info line and carries on. The app must run, with reduced features, if the file is missing. Keep the loader.
+- **Heavy files are off limits.** Put "heavy data, never read or edit, never needs sending to an AI" in the header comment of `index.html`, in `AGENTS.md` and at the top of the file itself.
+- **Hooks for plug-ins.** `index.html` contains a few small sections with searchable names (for example `EGG-HOOK`). The plug-in's `README-AI.md` lists the hooks and the contract: the names and meanings that must not change (host object, element ids, CSS classes and variables the plug-in reuses). The header comment of `index.html` repeats this, because an AI may be given `index.html` alone. After any change, search for the hook name and confirm every section is still there.
+- **Build script** (`tools/build-single.py`, standard library only): replace the loaders with embedded copies, embed plug-in sources as inert `<script type="text/plain" data-embedded="file.js">` blocks right after `<body>` so they exist before the loader runs, and make the loader run the embedded copy in order. Escape `</script` and `<!--` in embedded text. Find each place to change with `str.index()` on a unique marker so the build fails loudly if a marker was edited away. Write the output only after every step succeeded. Run it after every change to `index.html`.
+- **Build stamp.** Without a clock-stamping `build.py`, keep one manual stamp (`YYYY-MM-DD HH:MM:SS`, local time) in the header comment and one in the page footer (`BUILD-FOOTER`), updated on every code change. Take the time from the system clock in the owner's time zone, never from memory.
+- **"Self-contained" has limits.** CDN libraries, web fonts and live map or API services may stay external. Say so, and say what does not work offline.
+- **Adding a feature to a large file.** Put it in one clearly commented block with its design notes. Reuse the app's existing helpers, caches, settings store and styles. Give new map layers their own pane or new elements their own ids. Persist state in the existing settings store. Keep pure logic between `PURE:START/END` markers so it can be tested (section 6). Record the change in the changelog block (`changelog-keeper`).
+- **Private build-time config (your own services, keys).** Anything the owner must add without putting it in shared source (a map service with a key, for example) goes in an optional git-ignored file, `custom/<name>.js`, that sets one global (`window.AE_CUSTOM_SERVICES = [...]`). Ship a `custom/<name>.example.js` with the format documented at the top and only commented-out samples, and add the real file to `.gitignore`. Load it with the same optional loader as heavy assets (timeout, silent failure). The build script embeds it, fills `${ENV_NAME}` placeholders from the environment (escaped for a JS string, and **failing loudly** if a variable is unset), and prints a warning: the built file now contains the secret and must not be published. The app validates every entry, skips bad ones instead of crashing, whitelists anything that reaches markup (for example an icon class), and sets the global to `null` after reading it. Test it in a scratch copy with hostile values (quotes, backslashes, `</script>`), a missing variable, and no file at all; also confirm the real project folder holds no private file.
+- **Skills still apply.** `AGENTS.md` lists them and says where this project differs from Layout A.
+
+## 11. Lessons from Andrew's Earth (check these when changing a big single-file app)
+- **Raising a global limit** (for example the maximum zoom): search for everything that assumed the old number. Here that was the minimap (it has its own tile limit), a settings range and its default, and saved user settings where the old maximum meant "no limit" (migrate it, otherwise the feature silently starts limiting).
+- **A visual state that other CSS fights** (a cursor): do not set it inline on a parent. Rules on child elements (markers, vector lines) override inheritance. Use a class with `!important` on the container and its children, and check `getComputedStyle` in a real browser.
+- **Windowed (virtual) lists**: "scroll to this item" must first move the window so the row exists, then scroll, and retry for a few frames because a render may be pending. Centre the row only if it is not comfortably in view.
+- **Objects that are rebuilt** (a shape recreated after each edit) lose state such as z-order. Re-apply it at the rebuild, and prefer overriding the group method that re-orders everything over patching every call site.
+- **Press-and-hold gestures**: disable map dragging for the gesture, listen for the release on `document` (the pointer may leave the map), cancel on Esc, clean every listener up, and ignore the click event that follows the release.
+- **Dragging something that snaps**: exclude the dragged item from its own snap targets, show the snap ring while dragging, and report the snap only on drop.
+- **Layers that need a sign-in or key** are a decision for the owner, not a default: ask, keep them out of the source, and use the private config pattern above.
+- **Say what could not be tested.** Third-party services and the full map could not be exercised offline; the tests above cover the logic, the tile loading and the UI pieces, and the summary should say so.
+
 ## Checklist
 - [ ] Source of truth is `src/` and `assets/`; `dist/` is generated
 - [ ] build.py: placeholders checked, assets inlined, stamp from the clock, atomic write
@@ -80,3 +141,12 @@ Publish or share `dist/<name>.html` only. Give the user the project zip (source)
 - [ ] tests/smoke.js passes
 - [ ] AGENTS.md and a codebase skill describe the project
 - [ ] Rebuild of a converted file is byte-identical to the original
+
+Layout B additions:
+- [ ] `index.html` runs from source; heavy files are optional and load with a timeout and silent failure
+- [ ] Hooks are marked, documented in `README-AI.md` and repeated in the `index.html` header
+- [ ] `tools/build-single.py` fails loudly on a missing marker and was run after the last change
+- [ ] Build stamp (header and footer) updated from the real clock in the owner's time zone
+- [ ] Inline scripts pass `node --check`; pure logic and canvas/fetch code were tested as in section 6
+- [ ] `AGENTS.md` follows the section list in section 7 and was updated for this change
+- [ ] No secret anywhere in the source, `AGENTS.md` or skills; private config is git-ignored with an example file
